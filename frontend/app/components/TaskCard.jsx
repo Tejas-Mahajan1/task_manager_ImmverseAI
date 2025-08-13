@@ -1,6 +1,6 @@
 'use client';
 
-export default function TaskCard({ task, users, onDelete, onMarkComplete, onUpdateStatus }) {
+export default function TaskCard({ task, users, onDelete, onMarkComplete, onUpdateStatus, onEdit, getDependencyNames }) {
   const getPriorityColor = (priority) => {
     switch (priority) {
       case 'High': return 'bg-gradient-to-r from-red-500 to-pink-500 text-white';
@@ -86,14 +86,24 @@ export default function TaskCard({ task, users, onDelete, onMarkComplete, onUpda
             Created {new Date(task.createdAt).toLocaleDateString()}
           </p>
         </div>
-        <button
-          onClick={() => onDelete(task.id)}
-          className="ml-3 p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-200 group/delete"
-        >
-          <svg className="w-4 h-4 group-hover/delete:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => onEdit(task)}
+            className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all duration-200 group/edit"
+          >
+            <svg className="w-4 h-4 group-hover/edit:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => onDelete(task.id)}
+            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all duration-200 group/delete"
+          >
+            <svg className="w-4 h-4 group-hover/delete:scale-110 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
       </div>
       
       {/* Description */}
@@ -160,9 +170,14 @@ export default function TaskCard({ task, users, onDelete, onMarkComplete, onUpda
               </svg>
               <span>Dependencies</span>
             </span>
-            <span className="px-3 py-1 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-full text-xs font-semibold shadow-lg">
-              {task.dependencies.length} task(s)
-            </span>
+            <div className="text-right">
+              <span className="px-3 py-1 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-full text-xs font-semibold shadow-lg">
+                {task.dependencies.length} task(s)
+              </span>
+              <div className="mt-1 text-xs text-gray-600 max-w-32 truncate">
+                {getDependencyNames ? getDependencyNames(task.dependencies) : task.dependencies.join(', ')}
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -170,6 +185,16 @@ export default function TaskCard({ task, users, onDelete, onMarkComplete, onUpda
       {/* Action Buttons */}
       <div className="pt-4 border-t border-gray-200/50">
         <div className="flex space-x-3">
+          <button
+            onClick={() => onEdit(task)}
+            className="flex-1 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center justify-center space-x-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+            <span>Edit</span>
+          </button>
+          
           {task.status !== 'Done' && (
             <button
               onClick={() => onMarkComplete(task.id)}
@@ -181,7 +206,9 @@ export default function TaskCard({ task, users, onDelete, onMarkComplete, onUpda
               <span>Complete</span>
             </button>
           )}
-          
+        </div>
+        
+        <div className="flex space-x-3 mt-3">
           {task.status === 'To Do' && (
             <button
               onClick={() => onUpdateStatus(task.id, 'In Progress')}

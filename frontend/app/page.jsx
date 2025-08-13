@@ -15,12 +15,23 @@ export default function Home() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [showCreateTaskModal, setShowCreateTaskModal] = useState(false);
+  const [showEditTaskModal, setShowEditTaskModal] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [userLoading, setUserLoading] = useState(true);
 
   // Form states
   const [loginForm, setLoginForm] = useState({ username: "" });
   const [userForm, setUserForm] = useState({ username: "", email: "" });
   const [taskForm, setTaskForm] = useState({
+    title: "",
+    description: "",
+    priority: "Medium",
+    status: "To Do",
+    assignedTo: "",
+    dependencies: [],
+  });
+  const [editTaskForm, setEditTaskForm] = useState({
     title: "",
     description: "",
     priority: "Medium",
@@ -43,7 +54,41 @@ export default function Home() {
   useEffect(() => {
     loadUsers();
     loadTasks();
+    // Load and validate current user from localStorage on app start
+    validateSavedUser();
   }, []);
+
+  // Validate saved user session
+  const validateSavedUser = async () => {
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+      try {
+        const user = JSON.parse(savedUser);
+        // Verify user still exists in the system
+        const response = await fetch(`${API_BASE_URL}/users/${user.id}`);
+        if (!response.ok) {
+          // Backend not available or user not found
+          localStorage.removeItem('currentUser');
+          setCurrentUser(null);
+        } else {
+          const data = await response.json();
+          if (data.success) {
+            setCurrentUser(user);
+          } else {
+            // User no longer exists, clear from localStorage
+            localStorage.removeItem('currentUser');
+            setCurrentUser(null);
+          }
+        }
+      } catch (error) {
+        console.error('Error validating saved user:', error);
+        // Network error or backend not available
+        localStorage.removeItem('currentUser');
+        setCurrentUser(null);
+      }
+    }
+    setUserLoading(false);
+  };
 
   // API Functions
   const loadUsers = async () => {
@@ -106,6 +151,8 @@ export default function Home() {
       const data = await response.json();
       if (data.success) {
         setCurrentUser(data.user);
+        // Save user to localStorage for persistence
+        localStorage.setItem('currentUser', JSON.stringify(data.user));
         setShowLoginModal(false);
         setLoginForm({ username: "" });
         alert("Login successful!");
@@ -214,6 +261,74 @@ export default function Home() {
     }
   };
 
+  // Task editing functions
+  const openEditTaskModal = (task) => {
+    setEditingTask(task);
+    setEditTaskForm({
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      status: task.status,
+      assignedTo: task.assignedTo || "",
+      dependencies: task.dependencies || [],
+    });
+    setShowEditTaskModal(true);
+  };
+
+  const updateTask = async (e) => {
+    e.preventDefault();
+    try {
+      const taskData = {
+        ...editTaskForm,
+        assignedTo: editTaskForm.assignedTo || null,
+        dependencies: editTaskForm.dependencies.filter((d) => d),
+      };
+
+      const response = await fetch(`${API_BASE_URL}/tasks/${editingTask.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(taskData),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setTasks(
+          tasks.map((task) =>
+            task.id === editingTask.id ? data.task : task
+          )
+        );
+        setShowEditTaskModal(false);
+        setEditingTask(null);
+        alert("Task updated successfully!");
+      } else {
+        alert("Error: " + data.errors.join(", "));
+      }
+    } catch (error) {
+      console.error("Error updating task:", error);
+      alert("Error updating task");
+    }
+  };
+
+  // Dependency management functions
+  const addDependency = (taskId, dependencies) => {
+    if (!dependencies.includes(taskId)) {
+      return [...dependencies, taskId];
+    }
+    return dependencies;
+  };
+
+  const removeDependency = (taskId, dependencies) => {
+    return dependencies.filter((id) => id !== taskId);
+  };
+
+  const getDependencyNames = (dependencyIds) => {
+    return dependencyIds
+      .map((id) => {
+        const task = tasks.find((t) => t.id === id);
+        return task ? task.title : "Unknown Task";
+      })
+      .join(", ");
+  };
+
   // Filter tasks based on current filters and view mode
   const filteredTasks = tasks.filter((task) => {
     // Apply view mode filters
@@ -243,13 +358,12 @@ export default function Home() {
     (task) => task.status !== "Done" && task.dependencies.length > 0
   );
 
-  if (loading) {
+  if (loading || userLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center">
         <div className="text-center">
           <div className="relative">
             <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-200 border-t-blue-600 mx-auto"></div>
-            <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-indigo-600 animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
           </div>
           <p className="mt-6 text-gray-600 text-lg font-medium">Loading Task Manager...</p>
           <p className="mt-2 text-gray-400 text-sm">Preparing your workspace</p>
@@ -291,7 +405,11 @@ export default function Home() {
                     </span>
                   </div>
                   <button
-                    onClick={() => setCurrentUser(null)}
+                    onClick={() => {
+                      setCurrentUser(null);
+                      // Clear user from localStorage on logout
+                      localStorage.removeItem('currentUser');
+                    }}
                     className="bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white px-6 py-2 rounded-full text-sm font-medium transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
                   >
                     Logout
@@ -515,6 +633,8 @@ export default function Home() {
               onDelete={deleteTask}
               onMarkComplete={markTaskComplete}
               onUpdateStatus={updateTaskStatus}
+              onEdit={openEditTaskModal}
+              getDependencyNames={getDependencyNames}
             />
           ))}
         </div>
@@ -723,6 +843,52 @@ export default function Home() {
               ))}
             </select>
           </div>
+          
+          {/* Dependencies Selection */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">
+              Dependencies
+            </label>
+            <div className="space-y-3">
+              <div className="max-h-32 overflow-y-auto hide-scrollbar smooth-scroll border border-gray-300 rounded-xl p-3 bg-white/80 backdrop-blur-sm">
+                {tasks.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-2">No tasks available for dependencies</p>
+                ) : (
+                  tasks.map((task) => (
+                    <label key={task.id} className="flex items-center space-x-3 py-2 hover:bg-gray-50 rounded-lg px-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={taskForm.dependencies.includes(task.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setTaskForm({
+                              ...taskForm,
+                              dependencies: addDependency(task.id, taskForm.dependencies)
+                            });
+                          } else {
+                            setTaskForm({
+                              ...taskForm,
+                              dependencies: removeDependency(task.id, taskForm.dependencies)
+                            });
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{task.title}</p>
+                        <p className="text-xs text-gray-500">{task.priority} • {task.status}</p>
+                      </div>
+                    </label>
+                  ))
+                )}
+              </div>
+              {taskForm.dependencies.length > 0 && (
+                <div className="text-sm text-gray-600">
+                  <span className="font-medium">Selected dependencies:</span> {getDependencyNames(taskForm.dependencies)}
+                </div>
+              )}
+            </div>
+          </div>
           <div className="flex space-x-4">
             <button
               type="submit"
@@ -733,6 +899,163 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setShowCreateTaskModal(false)}
+              className="flex-1 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white px-6 py-3 rounded-xl font-medium transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Task Modal */}
+      <Modal
+        isOpen={showEditTaskModal}
+        onClose={() => setShowEditTaskModal(false)}
+        title="Edit Task"
+      >
+        <form onSubmit={updateTask} className="space-y-6">
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">
+              Title
+            </label>
+            <input
+              type="text"
+              value={editTaskForm.title}
+              onChange={(e) =>
+                setEditTaskForm({ ...editTaskForm, title: e.target.value })
+              }
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white/80 backdrop-blur-sm transition-all duration-200"
+              placeholder="Enter task title"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">
+              Description
+            </label>
+            <textarea
+              value={editTaskForm.description}
+              onChange={(e) =>
+                setEditTaskForm({ ...editTaskForm, description: e.target.value })
+              }
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white/80 backdrop-blur-sm transition-all duration-200"
+              rows="4"
+              placeholder="Enter task description"
+              required
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                Priority
+              </label>
+              <select
+                value={editTaskForm.priority}
+                onChange={(e) =>
+                  setEditTaskForm({ ...editTaskForm, priority: e.target.value })
+                }
+                className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white/80 backdrop-blur-sm transition-all duration-200"
+              >
+                <option value="Low" className="text-gray-900">Low</option>
+                <option value="Medium" className="text-gray-900">Medium</option>
+                <option value="High" className="text-gray-900">High</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-3">
+                Status
+              </label>
+              <select
+                value={editTaskForm.status}
+                onChange={(e) =>
+                  setEditTaskForm({ ...editTaskForm, status: e.target.value })
+                }
+                className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white/80 backdrop-blur-sm transition-all duration-200"
+              >
+                <option value="To Do" className="text-gray-900">To Do</option>
+                <option value="In Progress" className="text-gray-900">In Progress</option>
+                <option value="Done" className="text-gray-900">Done</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">
+              Assign To
+            </label>
+            <select
+              value={editTaskForm.assignedTo}
+              onChange={(e) =>
+                setEditTaskForm({ ...editTaskForm, assignedTo: e.target.value })
+              }
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 bg-white/80 backdrop-blur-sm transition-all duration-200"
+            >
+              <option value="" className="text-gray-900">Unassigned</option>
+              {users.map((user) => (
+                <option key={user.id} value={user.id} className="text-gray-900">
+                  {user.username}
+                </option>
+              ))}
+            </select>
+          </div>
+          
+          {/* Dependencies Selection for Edit */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-700 mb-3">
+              Dependencies
+            </label>
+            <div className="space-y-3">
+              <div className="max-h-32 overflow-y-auto hide-scrollbar smooth-scroll border border-gray-300 rounded-xl p-3 bg-white/80 backdrop-blur-sm">
+                {tasks.length === 0 ? (
+                  <p className="text-sm text-gray-500 text-center py-2">No tasks available for dependencies</p>
+                ) : (
+                  tasks
+                    .filter((task) => task.id !== editingTask?.id) // Prevent self-dependency
+                    .map((task) => (
+                      <label key={task.id} className="flex items-center space-x-3 py-2 hover:bg-gray-50 rounded-lg px-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={editTaskForm.dependencies.includes(task.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEditTaskForm({
+                                ...editTaskForm,
+                                dependencies: addDependency(task.id, editTaskForm.dependencies)
+                              });
+                            } else {
+                              setEditTaskForm({
+                                ...editTaskForm,
+                                dependencies: removeDependency(task.id, editTaskForm.dependencies)
+                              });
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{task.title}</p>
+                          <p className="text-xs text-gray-500">{task.priority} • {task.status}</p>
+                        </div>
+                      </label>
+                    ))
+                )}
+              </div>
+              {editTaskForm.dependencies.length > 0 && (
+                <div className="text-sm text-gray-600">
+                  <span className="font-medium">Selected dependencies:</span> {getDependencyNames(editTaskForm.dependencies)}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="flex space-x-4">
+            <button
+              type="submit"
+              className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white px-6 py-3 rounded-xl font-medium transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
+            >
+              Update Task
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowEditTaskModal(false)}
               className="flex-1 bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700 text-white px-6 py-3 rounded-xl font-medium transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5"
             >
               Cancel
